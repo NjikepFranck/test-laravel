@@ -39,20 +39,22 @@ php -r "file_exists('.env') || copy('.env.example', '.env');"
 php artisan key:generate
 php -r "file_exists('database/database.sqlite') || touch('database/database.sqlite');"
 php artisan migrate --seed
-php artisan serve --host=127.0.0.1 --port=8000
+php artisan serve --host=127.0.0.1 --port=8000 --no-reload
 ```
 
 SQLite est configuré par défaut. `APP_DEBUG=false` évite d'exposer les détails internes. Le fuseau métier est `Africa/Douala` dans `config/app.php`. Le fichier `.env`, les données SQLite et `vendor` sont exclus de Git. Ne pas exécuter le seeder de démonstration sur une base de production.
 
 ### Environnement Windows/Wamp de cette livraison
 
-PHP et Composer n'étant pas disponibles dans le PATH initial, des outils locaux ont été préparés dans le dossier voisin `.tools` (non versionné). Pour lancer immédiatement depuis ce dossier :
+PHP et Composer n'étant pas disponibles dans le PATH initial, des outils locaux ont été préparés dans `C:\wamp64\www\orbit\.tools` (non versionné). Pour lancer immédiatement depuis ce dossier :
 
 ```powershell
-$env:PHPRC = (Resolve-Path ../.tools/php.ini).Path
+$env:PHPRC = 'C:\wamp64\www\orbit\.tools\php.ini'
 $env:PATH = 'C:\wamp64\bin\php\php8.4.15;' + $env:PATH
-php artisan serve --host=127.0.0.1 --port=8000
+php artisan serve --host=127.0.0.1 --port=8000 --no-reload
 ```
+
+Sous Windows/Wamp, `--no-reload` conserve les variables du processus PHP enfant et corrige `Failed to listen ... (reason: ?)`. Redemarrer manuellement le serveur apres modification de `.env`.
 
 Pour une autre machine, suivre l'installation standard ci-dessus ; `.tools` n'est pas nécessaire.
 
