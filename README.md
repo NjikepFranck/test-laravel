@@ -163,5 +163,3 @@ La prochaine amélioration métier serait de permettre au responsable de créer 
 ## Dépôt GitHub
 
 [Code source — test-laravel](https://github.com/NjikepFranck/test-laravel)
-#   t e s t - l a r a v e l  
- 
