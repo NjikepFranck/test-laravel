@@ -27,7 +27,7 @@ class OrbitApiTest extends TestCase
     {
         $this->getJson('/api/projects')->assertUnauthorized();
         $this->getJson('/api/projects/1/tasks')->assertUnauthorized();
-        $this->patchJson('/api/tasks/1', ['status' => 'DONE'])->assertUnauthorized();
+        $this->patchJson('/api/tasks/1/status', ['status' => 'DONE'])->assertUnauthorized();
     }
 
     public function test_invalid_credentials_are_rejected_even_without_accept_header(): void
@@ -41,7 +41,7 @@ class OrbitApiTest extends TestCase
         $this->loginAs('outsider');
         $this->getJson('/api/projects')->assertOk()->assertJsonCount(0, 'data');
         $this->getJson('/api/projects/1/tasks')->assertForbidden();
-        $this->patchJson('/api/tasks/1', ['status' => 'DONE'])->assertForbidden();
+        $this->patchJson('/api/tasks/1/status', ['status' => 'DONE'])->assertForbidden();
         $this->assertDatabaseHas('tasks', ['id' => 1, 'status' => 'TODO']);
     }
 
@@ -62,7 +62,7 @@ class OrbitApiTest extends TestCase
     public function test_collaborator_cannot_modify_another_collaborators_task(): void
     {
         $this->loginAs('alice');
-        $this->patchJson('/api/tasks/2', ['status' => 'DONE'])->assertForbidden();
+        $this->patchJson('/api/tasks/2/status', ['status' => 'DONE'])->assertForbidden();
         $this->assertDatabaseHas('tasks', ['id' => 2, 'status' => 'IN_PROGRESS']);
     }
 
@@ -70,7 +70,7 @@ class OrbitApiTest extends TestCase
     {
         $this->loginAs('alice');
         foreach (Task::STATUSES as $status) {
-            $this->patchJson('/api/tasks/1', ['status' => $status])
+            $this->patchJson('/api/tasks/1/status', ['status' => $status])
                 ->assertOk()->assertJsonPath('data.status', $status);
             $this->assertDatabaseHas('tasks', ['id' => 1, 'status' => $status]);
         }
@@ -80,16 +80,16 @@ class OrbitApiTest extends TestCase
     {
         $this->loginAs('manager');
         $this->getJson('/api/projects/1/tasks')->assertOk()->assertJsonCount(3, 'data');
-        $this->patchJson('/api/tasks/2', ['status' => 'DONE'])->assertOk();
+        $this->patchJson('/api/tasks/2/status', ['status' => 'DONE'])->assertOk();
     }
 
     public function test_invalid_status_missing_status_and_reassignment_are_rejected(): void
     {
         $this->loginAs('alice');
         foreach ([[], ['status' => 'INVALID'], ['status' => null], ['status' => ['DONE']]] as $body) {
-            $this->patchJson('/api/tasks/1', $body)->assertUnprocessable()->assertJsonValidationErrors('status');
+            $this->patchJson('/api/tasks/1/status', $body)->assertUnprocessable()->assertJsonValidationErrors('status');
         }
-        $this->patchJson('/api/tasks/1', ['status' => 'DONE', 'assigned_user_id' => 3])
+        $this->patchJson('/api/tasks/1/status', ['status' => 'DONE', 'assigned_user_id' => 3])
             ->assertUnprocessable()->assertJsonValidationErrors('assigned_user_id');
         $this->assertDatabaseHas('tasks', ['id' => 1, 'status' => 'TODO', 'assigned_user_id' => 2]);
     }
@@ -98,7 +98,7 @@ class OrbitApiTest extends TestCase
     {
         $this->loginAs('manager');
         $this->getJson('/api/projects/999/tasks')->assertNotFound();
-        $this->patchJson('/api/tasks/999', ['status' => 'DONE'])->assertNotFound();
+        $this->patchJson('/api/tasks/999/status', ['status' => 'DONE'])->assertNotFound();
     }
 
     public function test_overdue_rule_excludes_done_and_includes_only_past_dates(): void
