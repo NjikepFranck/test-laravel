@@ -1,135 +1,151 @@
-# Orbit — API de suivi de projets
+# Orbit — suivi de projets
 
-Projet réalisé dans le cadre d’un test technique pour un stage professionnel. Il utilise **Laravel 12**, **PHP 8.4** et **SQLite**. Le développement a été effectué sous Windows avec **Wamp64**. L’application renvoie du JSON et ne possède pas d’interface graphique.
+API Laravel 12, SQLite, sans frontend ni Docker. Les dépendances exactes sont verrouillées dans `composer.lock`.
 
-## 1. Compréhension du besoin
+## 1. Compréhension et arbitrages
 
-Orbit souhaite centraliser le suivi de ses projets et des tâches confiées aux collaborateurs.
-Chaque collaborateur doit pouvoir consulter ses tâches et mettre à jour leur avancement.
-Le responsable doit avoir une vue sur ses projets et repérer rapidement les tâches en retard.
-La priorité est de proposer un outil simple tout en empêchant les modifications sans autorisation.
+### Question 1 — Reformulation du besoin métier
 
-### Trois questions au client
+Orbit souhaite centraliser la gestion et le suivi de ses projets dans une application interne.
+Les responsables doivent pouvoir créer des projets, attribuer des tâches aux collaborateurs et suivre leur avancement.
+Les collaborateurs doivent consulter leurs tâches et actualiser leur statut, tandis que les responsables identifient rapidement les retards.
+La priorité est de rendre ce suivi utilisable rapidement tout en garantissant que chaque lecture et modification respecte les droits de la personne authentifiée.
 
-| Question | Impact sur la solution |
-| --- | --- |
-| Un collaborateur peut-il voir les tâches de ses collègues ? Le responsable peut-il les modifier ? | Détermine les règles d’accès. Choix retenu : chacun voit et modifie ses propres tâches ; le responsable peut consulter et changer les statuts de toutes les tâches de ses projets. |
-| À quel moment une tâche est-elle considérée en retard, et dans quel fuseau horaire ? | Détermine le calcul du retard. Choix retenu : après la fin de la date d’échéance, dans le fuseau `Africa/Douala`, si le statut est différent de `DONE`. |
-| Faut-il envoyer des notifications lorsque les échéances approchent ou sont dépassées ? | Nécessiterait un système de notifications et une exécution planifiée. Cette fonctionnalité est reportée pour garder une première version simple. |
+### Question 2 — Trois questions à poser au client
 
-### MVP : trois fonctionnalités essentielles
+1. **Quels sont les rôles et les autorisations des utilisateurs ?** Un responsable peut-il modifier les tâches de ses collaborateurs ? Un collaborateur peut-il consulter les tâches des autres ou uniquement les siennes ?
 
-1. **Consulter les projets et les tâches accessibles**, pour que chacun retrouve son travail.
-2. **Mettre à jour les statuts et identifier les retards**, pour suivre l’avancement.
-3. **Authentifier les utilisateurs et contrôler leurs droits**, pour protéger les données.
+   **Impact sur la solution :** la réponse détermine les Policies Laravel et le filtrage des listes côté serveur. Hypothèse retenue : un responsable consulte toutes les tâches de ses propres projets et peut changer leurs statuts ; un collaborateur consulte et modifie uniquement les tâches qui lui sont attribuées. Les droits de responsable sont propres à chaque projet, sans rôle global donnant accès à tous les projets.
 
-**Fonctionnalité à reporter :** les notifications par e-mail. Le responsable peut déjà repérer les retards grâce au champ `is_overdue`.
+2. **Comment souhaitez-vous identifier les tâches en retard ?** Une tâche est-elle en retard lorsque son échéance est dépassée et que son statut est différent de `DONE` ? La date reste-t-elle valable jusqu’à la fin de la journée, et dans quel fuseau horaire ?
 
-**Critère d’acceptation :** si Alice tente de modifier une tâche attribuée à Bob sans autorisation, l’API retourne `403 Forbidden` et le statut en base reste inchangé. Ce cas est couvert par un test automatisé.
+   **Impact sur la solution :** la réponse détermine le type de champ (date ou date et heure) et le calcul du retard. Hypothèse retenue : échéance inclusive, retard à partir du lendemain à 00 h dans le fuseau `Africa/Douala`, sauf si la tâche est `DONE`. Cette règle est exposée dans le champ JSON `is_overdue`.
 
-## 2. Installation avec Wamp64
+3. **Souhaitez-vous recevoir des notifications automatiques ?** Les collaborateurs doivent-ils être avertis lorsqu’une échéance approche ou lorsqu’une tâche est en retard ?
 
-Prérequis : Git, Composer 2 et PHP 8.4 avec les extensions SQLite/PDO SQLite, mbstring, OpenSSL, fileinfo, cURL et XML/DOM. Adapter le chemin de PHP si la version installée dans Wamp est différente.
+   **Impact sur la solution :** une réponse positive nécessiterait de préciser les destinataires, les délais et le canal, puis de prévoir Laravel Notifications et une exécution planifiée avec le Scheduler. Pour cette première version, les notifications sont reportées ; les retards restent consultables dans les réponses de l’API.
 
-Depuis le dossier du projet, ouvrir PowerShell :
+### Question 3 — Définition du MVP
 
-```powershell
-cd C:\wamp64\www\orbit
-$env:PATH = 'C:\wamp64\bin\php\php8.4.15;' + $env:PATH
+Le MVP est la première version fonctionnelle contenant les fonctionnalités indispensables pour valider le suivi des tâches et les droits d’accès.
 
-# Configuration PHP locale, si elle est présente sur la machine
-if (Test-Path .tools/php.ini) {
-    $env:PHPRC = (Resolve-Path .tools/php.ini).Path
-}
+1. **Consultation des projets et des tâches autorisés :** permettre au responsable de consulter ses projets et leurs tâches, et à chaque collaborateur de retrouver les tâches qui lui sont attribuées. Cela fournit un point d’entrée simple et protège les données des autres utilisateurs.
+2. **Suivi de l’avancement et des retards :** permettre la mise à jour du statut (`TODO`, `IN_PROGRESS`, `DONE`) d’une tâche autorisée et exposer son échéance ainsi que `is_overdue`. Le responsable peut ainsi repérer les tâches à traiter en priorité.
+3. **Authentification et gestion des autorisations :** identifier chaque utilisateur et vérifier ses droits côté serveur à chaque accès. Cette protection est indispensable pour empêcher la modification du travail d’autrui sans autorisation.
 
-# Utiliser Composer installé, ou la copie locale disponible
-if (Test-Path .tools/composer.phar) {
-    php .tools/composer.phar install
-} else {
-    composer install
-}
+**Limite explicite de la démonstration :** la création des projets, des tâches et des affectations fait partie du besoin métier complet, mais elle est réalisée ici par un seeder. Aucun endpoint de création n’est livré : le périmètre technique demandé comporte trois endpoints de consultation et de mise à jour du statut. La création et l’affectation par le responsable constituent la prochaine extension métier à implémenter et à sécuriser.
 
+**Fonctionnalité à reporter :** les notifications automatiques par e-mail. Elles améliorent le suivi, mais ne sont pas indispensables pour valider le parcours initial : le responsable peut déjà identifier les retards dans les données retournées par l’API.
+
+### Question 4 — Critère d’acceptation testable (4 points)
+
+Étant donné Alice et Bob, collaborateurs du même projet, lorsqu’Alice authentifiée tente de passer à `DONE` une tâche attribuée à Bob sans autorisation, l’API retourne `403 Forbidden` et le statut de la tâche reste `IN_PROGRESS` en base.
+
+Ce scénario est automatisé dans `tests/Feature/OrbitApiTest.php`, dans le test `test_collaborator_cannot_modify_another_collaborators_task`.
+
+## 2. Installation et lancement
+
+Prérequis : PHP 8.4 ou supérieur compatible avec le lock, Composer 2, extensions PDO SQLite, sqlite3, mbstring, openssl, fileinfo, cURL et XML/DOM. ZIP facilite l'installation. Aucun Node, build d'assets ou serveur MySQL requis.
+
+Depuis le dossier de ce README :
+
+```sh
+composer install
 php -r "file_exists('.env') || copy('.env.example', '.env');"
 php artisan key:generate
 php -r "file_exists('database/database.sqlite') || touch('database/database.sqlite');"
 php artisan migrate --seed
-php artisan serve --no-reload
+php artisan serve --host=127.0.0.1 --port=8000 --no-reload
 ```
 
-L’API est accessible sur **http://127.0.0.1:8000**. Garder le terminal ouvert et utiliser **Ctrl + C** pour arrêter le serveur. L’option `--no-reload` évite le problème de lancement rencontré sous Windows ; redémarrer le serveur après une modification du `.env`.
+SQLite est configuré par défaut. `APP_DEBUG=false` évite d'exposer les détails internes. Le fuseau métier est `Africa/Douala` dans `config/app.php`. Le fichier `.env`, les données SQLite et `vendor` sont exclus de Git. Ne pas exécuter le seeder de démonstration sur une base de production.
 
-Wamp fournit ici PHP. La base utilisée est SQLite : MySQL et Apache ne sont pas nécessaires pour ce lancement avec Artisan. Vérifier que le `.env` contient `DB_CONNECTION=sqlite`.
+### Environnement Windows/Wamp de cette livraison
 
-Le dossier `.tools` contient des outils propres à la machine de développement et n’est pas versionné. Après un clonage Git, utiliser PHP et Composer installés sur la machine. Adapter également le chemin `orbit` au nom du dossier cloné. Le `.env`, la base SQLite et `vendor` sont exclus de Git.
+PHP et Composer n'étant pas disponibles dans le PATH initial, des outils locaux ont été préparés dans `C:\wamp64\www\orbit\.tools` (non versionné). Pour lancer immédiatement depuis ce dossier :
 
-## 3. Comptes de démonstration
+```powershell
+$env:PHPRC = 'C:\wamp64\www\orbit\.tools\php.ini'
+$env:PATH = 'C:\wamp64\bin\php\php8.4.15;' + $env:PATH
+php artisan serve --host=127.0.0.1 --port=8000 --no-reload
+```
 
-Le seeder crée **4 utilisateurs, 1 projet et 3 tâches**. Les mots de passe sont hachés en base.
+Sous Windows/Wamp, `--no-reload` conserve les variables du processus PHP enfant et corrige `Failed to listen ... (reason: ?)`. Redemarrer manuellement le serveur apres modification de `.env`.
 
-| Identifiant | Accès |
+Pour une autre machine, suivre l'installation standard ci-dessus ; `.tools` n'est pas nécessaire.
+
+### Données de démonstration et authentification
+
+HTTP Basic Laravel via `Auth::onceBasic()`, sans session : envoyer l'email comme identifiant et le mot de passe à chaque requête. Aucun simple identifiant utilisateur fourni par le client n'est considéré comme une preuve d'identité. Les mots de passe sont hachés par le modèle User.
+
+| Email | Accès |
 | --- | --- |
-| `manager@orbit.test` | Toutes les tâches de son projet |
-| `alice@orbit.test` | Ses deux tâches |
-| `bob@orbit.test` | Sa tâche |
-| `outsider@orbit.test` | Aucun projet |
+| manager@orbit.test | Responsable du projet Lancement Orbit, voit ses 3 tâches et peut changer leurs statuts |
+| alice@orbit.test | Voit le projet et ses 2 tâches, modifie ses propres statuts |
+| bob@orbit.test | Voit le projet et sa tâche, modifie son propre statut |
+| outsider@orbit.test | Aucun projet accessible |
 
-**Mot de passe commun :** `Orbit-demo-2026!`
+Mot de passe commun de démonstration : `Orbit-demo-2026!`. Un projet et trois tâches sont créés, dont une TODO en retard, une IN_PROGRESS à venir et une DONE avec une ancienne échéance. Les dates sont relatives à la première exécution du seeder. Le relancer ne crée pas de doublons et ne réinitialise pas les données existantes.
 
-L’authentification utilise **HTTP Basic** : transmettre l’email et le mot de passe à chaque requête, par exemple avec l’onglet *Authorization → Basic Auth* de Postman. Ce choix convient à la démonstration ; une utilisation réelle demanderait HTTPS et le remplacement des comptes de test.
+Basic est un compromis de démonstration explicitement autorisé par l'énoncé. En dehors de localhost, HTTPS est indispensable. Remplacer les comptes connus et prévoir Sanctum avec jetons révocables avant une utilisation réelle. Sur Apache/FastCGI, vérifier la transmission de l'en-tête Authorization si les identifiants corrects produisent un 401.
 
-Le seeder peut être relancé sans créer de doublons. Les échéances sont calculées lors de la première création des tâches.
+## 3. API
 
-## 4. Endpoints et essais
+Les noms de colonnes sont anglais : `name` = nom, `title` = titre, `status` = statut, `due_date` = échéance ; `responsable_id` suit l'énoncé. Les relations sont Project.responsable, Project.tasks, Task.project, Task.assignedUser, User.projects et User.assignedTasks.
 
-| Méthode | URL | Description |
-| --- | --- | --- |
-| GET | `/api/projects` | Projets accessibles à l’utilisateur connecté |
-| GET | `/api/projects/{project}/tasks` | Tâches autorisées du projet |
-| PATCH | `/api/tasks/{task}/status` | Modification du statut d’une tâche autorisée |
+| Méthode et chemin | Comportement |
+| --- | --- |
+| GET /api/projects | Projets dont l'utilisateur est responsable ou possède au moins une tâche |
+| GET /api/projects/{project}/tasks | Toutes les tâches pour le responsable ; uniquement les tâches affectées à l'utilisateur pour un collaborateur |
+| PATCH /api/tasks/{task}/status | Corps JSON : `{"status":"IN_PROGRESS"}` ; autorisé à l'affecté ou au responsable du projet |
 
-Statuts acceptés : `TODO`, `IN_PROGRESS`, `DONE`. Le PATCH modifie uniquement `status`. Les listes sont paginées par 20 éléments. Le champ `is_overdue` indique un retard ; une tâche terminée ou dont l’échéance est aujourd’hui n’est pas en retard.
+Les listes retournent `data`, `links` et les informations de pagination à la racine (`current_page`, `last_page`, `total`), avec 20 éléments par page (`?page=2`). Les tâches sont triées par échéance puis identifiant. La réponse PATCH est `{"data":{...}}`. Chaque tâche inclut `is_overdue`, vrai si `due_date` est avant aujourd'hui et `status` différent de DONE. Une échéance du jour n'est pas encore en retard.
 
-### Consulter les données
+Statuts autorisés : `TODO`, `IN_PROGRESS`, `DONE`. Tout passage entre ces statuts est autorisé. Un PATCH ne modifie jamais titre, échéance, projet ou affectation ; leurs valeurs non vides sont rejetées en validation, les autres champs inconnus sont ignorés et ne sont jamais persistés.
 
-Dans un deuxième terminal PowerShell :
+Réponses : 200 succès, 401 absent/mauvais identifiants, 403 ressource existante mais accès interdit, 404 ressource inexistante, 422 validation invalide, 429 limite de 60 requêtes par minute et par IP. Les erreurs `/api/*` sont JSON même sans en-tête Accept. Les policies contrôlent l'accès serveur et le contrôleur limite les champs écrits. Un rôle n'est pas global : être responsable d'un projet ne donne aucun droit sur les autres.
 
-```powershell
-curl.exe -u 'manager@orbit.test:Orbit-demo-2026!' http://127.0.0.1:8000/api/projects
-curl.exe -u 'manager@orbit.test:Orbit-demo-2026!' http://127.0.0.1:8000/api/projects/1/tasks
+### Exemples exécutables
+
+Utiliser `curl.exe` sous Windows PowerShell, ou `curl` sous Linux/macOS. Les identifiants numériques ci-dessous correspondent à une base initiale vierge.
+
+```sh
+curl.exe -u 'manager@orbit.test:Orbit-demo-2026!' -H 'Accept: application/json' http://127.0.0.1:8000/api/projects
+curl.exe -u 'manager@orbit.test:Orbit-demo-2026!' -H 'Accept: application/json' http://127.0.0.1:8000/api/projects/1/tasks
+curl.exe -u 'alice@orbit.test:Orbit-demo-2026!' -H 'Accept: application/json' -H 'Content-Type: application/json' -X PATCH -d '{"status":"IN_PROGRESS"}' http://127.0.0.1:8000/api/tasks/1/status
+curl.exe -u 'alice@orbit.test:Orbit-demo-2026!' -H 'Accept: application/json' -H 'Content-Type: application/json' -X PATCH -d '{"status":"DONE"}' http://127.0.0.1:8000/api/tasks/2/status
 ```
 
-### Modifier un statut
+La dernière requête doit renvoyer 403. Dans Windows PowerShell 5, si l'échappement JSON de curl pose problème, utiliser :
 
 ```powershell
-$headers = @{
-    Authorization = 'Basic ' + [Convert]::ToBase64String(
-        [Text.Encoding]::UTF8.GetBytes('alice@orbit.test:Orbit-demo-2026!')
-    )
-}
-
-Invoke-RestMethod -Method Patch `
-    -Uri http://127.0.0.1:8000/api/tasks/1/status `
-    -Headers $headers `
-    -ContentType 'application/json' `
-    -Body '{"status":"IN_PROGRESS"}'
+$headers = @{ Authorization = 'Basic ' + [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes('alice@orbit.test:Orbit-demo-2026!')) }
+Invoke-RestMethod -Method Patch -Uri http://127.0.0.1:8000/api/tasks/1/status -Headers $headers -ContentType 'application/json' -Body '{"status":"IN_PROGRESS"}'
 ```
 
-Sur la base de démonstration initiale, la tâche `1` appartient à Alice : la requête réussit. Remplacer `1` par `2` pour viser la tâche de Bob : la réponse attendue est **403**.
+## 4. Vérification
 
-Principales réponses : **200** succès, **401** identifiants absents ou invalides, **403** accès interdit, **404** ressource inexistante, **422** données invalides et **429** limite de requêtes atteinte.
-
-## 5. Tests
-
-Depuis le dossier du projet, dans un terminal où PHP est configuré comme ci-dessus :
-
-```powershell
+```sh
 php artisan test
 php vendor/bin/pint --test
+php artisan route:list --path=api
 ```
 
-Dernière vérification : **13 tests réussis, 59 assertions**, et contrôle de style validé. Les tests couvrent les droits d’accès, les statuts, les données invalides, les tâches inexistantes et le calcul des retards. Ils utilisent une base SQLite en mémoire et ne modifient pas les données de démonstration.
+### Tests automatisés sous Windows/Wamp
 
-## 6. Diagnostic du code fourni
+```powershell
+$env:PHPRC = "$PWD\.tools\php.ini"
+$env:PATH = 'C:\wamp64\bin\php\php8.4.15;' + $env:PATH
+php artisan test
+```
+
+Les tests utilisent une base SQLite **en mémoire**, séparée de la démonstration. Ils couvrent les identifiants invalides, les trois routes sans authentification, la visibilité des projets, le filtrage des tâches, les modifications interdites sans effet en base, l'autorisation du responsable, les trois statuts, les entrées invalides, la réaffectation interdite, les 404 JSON, la limite de date du retard et l'idempotence du seeder.
+
+Vérification effectuée sur cette livraison : **13 tests réussis, 59 assertions**, contrôle Pint réussi, migrations/seed exécutés. Les appels HTTP réels ont confirmé 401 sans identifiants, 200 pour la lecture du responsable et le PATCH de l'affecté, et 403 pour la modification d'une tâche d'autrui.
+
+## 5. Diagnostic rapide : trois risques et corrections
+
+Code fourni dans le sujet :
 
 ```php
 public function update(Request $request, $id) {
@@ -139,27 +155,32 @@ public function update(Request $request, $id) {
 }
 ```
 
-| Risque | Correction |
+| Risque concret | Correction |
 | --- | --- |
-| Aucun contrôle visible ne vérifie le droit de modifier la tâche. Un utilisateur peut viser celle d’un autre. | Authentifier la requête et vérifier une Policy avec `Gate::authorize('update', $task)`. |
-| `$request->all()` transmet des champs non validés, dont potentiellement l’affectation ou le projet selon les champs autorisés du modèle. | Valider le statut parmi les trois valeurs acceptées et enregistrer uniquement ce champ. |
-| `Task::find($id)` peut retourner `null`, ce qui provoque une erreur lors de `update()`. | Utiliser `findOrFail()` ou le route model binding pour retourner un 404. |
+| **Absence de contrôle des droits sur la tâche :** aucun contrôle visible ne vérifie que la personne peut modifier la tâche récupérée par son identifiant. Un collaborateur peut viser la tâche d’un autre (IDOR), même si une authentification existe au niveau des routes. | Authentifier la requête puis appeler `Gate::authorize('update', $task)` avec une policy autorisant uniquement la personne affectée ou le responsable du projet. **Priorité 1** : cette faille permet de modifier le travail d’autrui, en contradiction directe avec la demande du client. Tester le 403 et vérifier que la base reste inchangée. |
+| **Écriture de données non validées avec `$request->all()` :** aucun statut autorisé n’est vérifié et, selon la configuration `$fillable`/`$guarded`, des champs sensibles comme `assigned_user_id` ou `project_id` peuvent être modifiés. | Valider `status` avec `required`, `string` et `Rule::in(['TODO', 'IN_PROGRESS', 'DONE'])`, rejeter les changements de champs métier hors périmètre et écrire explicitement seulement le statut validé. La protection contre l’affectation de masse ne remplace ni la validation ni la policy. |
+| **Tâche inexistante non gérée :** `Task::find($id)` retourne `null` pour un identifiant absent ; appeler `update()` provoque alors une erreur serveur au lieu d’une réponse métier correcte. | Utiliser `findOrFail($id)` ou le route model binding `Task $task` pour obtenir un 404 JSON. Tester un identifiant inexistant. |
 
-**À corriger en premier : le contrôle des droits**, car il protège directement le travail des collaborateurs. Ces corrections sont appliquées dans le contrôleur et les Policies du projet.
+Le flux corrigé est implémenté dans `TaskController::update` pour `PATCH /api/tasks/{task}/status` : résolution de la tâche → policy → validation → écriture ciblée → réponse JSON. Les tests vérifient les droits, les données invalides, les tentatives de réaffectation et les identifiants inexistants.
 
-## 7. Choix et limites
+## 6. Périmètre livré, limites et décision principale
 
-Les modèles `Project`, `Task` et `User` sont reliés avec Eloquent. Les colonnes `name`, `title`, `status` et `due_date` correspondent au nom, au titre, au statut et à l’échéance demandés.
+Fonctionne : installation Laravel, migrations, seed répétable, authentification, trois endpoints, relations, pagination, indicateur de retard, contrôles d'accès et tests automatisés.
 
-Cette version livre les trois endpoints, l’authentification, les autorisations et le suivi des retards. Les projets, les tâches et les affectations sont préchargés par le seeder : leur création par API reste à développer. Les notifications par e-mail et l’historique des modifications ne sont pas implémentés. Aucune interface graphique n’est prévue pour ce test.
+Manque volontairement : création/édition de projets et affectation par API, gestion des comptes, notifications, historique des changements et interface. La création et l'affectation sont démontrées par le seeder : le périmètre technique demandé impose trois endpoints, et la priorité a été donnée à leur sécurité de bout en bout. Le besoin métier complet de création par le responsable reste donc à implémenter.
 
-### Décision principale et suite
+SQLite convient à cette démonstration, mais une charge importante demanderait une base serveur et une étude des accès concurrents. Les changements de statut suivent le dernier enregistrement reçu ; aucun verrouillage optimiste ni audit. Le 403 distingue une ressource existante d'un ID inexistant : une politique 404 uniforme pourrait réduire cette information. L'authentification et les requêtes partagent une limite par IP, adaptée à la démonstration et à revoir derrière un proxy.
 
-J’ai privilégié un parcours simple et fonctionnel, avec des droits vérifiés côté serveur.
-SQLite et HTTP Basic permettent de tester rapidement la solution dans mon environnement Wamp.
-Les Policies limitent les accès aux tâches attribuées et aux projets supervisés.
-La prochaine amélioration métier serait de permettre au responsable de créer les projets et d’attribuer les tâches par API, avec les mêmes contrôles d’accès.
+### Restitution : décision et prochaine amélioration
 
-## Dépôt GitHub
+J'ai privilégié la protection du travail de chaque collaborateur et un parcours API utilisable immédiatement.
+Les droits dépendent du projet et de l'affectation, plutôt que d'un rôle global trop permissif.
+HTTP Basic et SQLite limitent le temps de mise en place pour concentrer les vérifications sur les accès.
+L'amélioration métier prioritaire est la création des projets et l'affectation des tâches par le responsable, protégées par des policies et des tests ; l'authentification de production devra aussi être préparée avant déploiement.
 
-[Code source — test-laravel](https://github.com/NjikepFranck/test-laravel)
+## 7. Livraison GitHub
+
+https://github.com/NjikepFranck/test-laravel.git
+
+
+Références officielles consultées : [installation Laravel 12](https://laravel.com/docs/12.x/installation), [authentification HTTP Basic](https://laravel.com/docs/12.x/authentication#http-basic-authentication), [autorisation](https://laravel.com/docs/12.x/authorization).
